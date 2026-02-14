@@ -6,8 +6,6 @@ const { URL } = require("url");
 const path = require("path");
 const fs = require("fs");
 const server = express();
-fs.mkdirSync(root("design"), { recursive: true });
-fs.mkdirSync(root("output"), { recursive: true });
 
 /**
  * Helper functions for
