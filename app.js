@@ -17,6 +17,28 @@ const designFolder = (file) => `design/${file}`;
 const templateFolder = (file) => `template/${file}`;
 const outputFolder = (file) => `output/${file}`;
 const JPGExt = (file) => `${file}.jpg`;
+const FALLBACK_JPG = root("template/fallback.jpg");
+const GENERATION_TIMEOUT_MS = 10000;
+
+/**
+ * Send the fallback placeholder JPEG
+ */
+const sendFallback = (res) => {
+  res.type("jpg").status(200).sendFile(FALLBACK_JPG);
+};
+
+/**
+ * Wrap a promise with a timeout
+ */
+const withTimeout = (promise, ms) => {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`Timed out after ${ms}ms`)), ms);
+    promise.then(
+      (val) => { clearTimeout(timer); resolve(val); },
+      (err) => { clearTimeout(timer); reject(err); }
+    );
+  });
+};
 
 /**
  * Check if file exists
@@ -121,15 +143,26 @@ server.get("/autogen/:file", async (req, res) => {
   const outputFile = root(outputFolder(fileName));
   try {
     const isFileExist = await checkIfFileExists(outputFile);
-    if (!isFileExist) {
-      const output = await generateImage(fileName);
-      if (output) return res.sendFile(outputFile);
-      return res.send("OH NO!!!  Something went wrong!!!");
+    if (isFileExist) {
+      console.log(`[autogen] cache hit: ${fileName}`);
+      return res.type("jpg").sendFile(outputFile);
     }
 
-    res.sendFile(outputFile);
+    console.log(`[autogen] cache miss, generating: ${fileName}`);
+    const start = Date.now();
+    const output = await withTimeout(generateImage(fileName), GENERATION_TIMEOUT_MS);
+    const duration = Date.now() - start;
+
+    if (output) {
+      console.log(`[autogen] generated: ${fileName} (${duration}ms)`);
+      return res.type("jpg").sendFile(outputFile);
+    }
+
+    console.log(`[autogen] generation returned falsy: ${fileName} (${duration}ms)`);
+    return sendFallback(res);
   } catch (err) {
-    console.log(err);
+    console.log(`[autogen] failed: ${fileName} - ${err.message}`);
+    return sendFallback(res);
   }
 });
 
