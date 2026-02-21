@@ -128,8 +128,27 @@ const generateImage = async (file) => {
       if (!isDownloaded) return false;
     }
 
+    // Get template dimensions so we can resize the design to fit
+    const templateMeta = await sharp(localTemplate).metadata();
+    const designMeta = await sharp(localDesign).metadata();
+
+    let designInput = localDesign;
+
+    // If design is larger than template, resize it to fit within template bounds
+    if (designMeta.width > templateMeta.width || designMeta.height > templateMeta.height) {
+      designInput = await sharp(localDesign)
+        .resize({
+          width: templateMeta.width,
+          height: templateMeta.height,
+          fit: 'inside',
+          background: { r: 0, g: 0, b: 0, alpha: 0 }
+        })
+        .png()
+        .toBuffer();
+    }
+
     const image = await sharp(localTemplate)
-      .composite([{ input: localDesign }])
+      .composite([{ input: designInput }])
       .toFile(output);
 
     return image;
