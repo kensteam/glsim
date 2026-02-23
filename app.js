@@ -21,6 +21,104 @@ const FALLBACK_JPG = root("template/fallback.jpg");
 const GENERATION_TIMEOUT_MS = 10000;
 
 /**
+ * ═══════ PRODUCT PREFIX MAP ═══════
+ * Maps the first part of the template filename to a product type
+ * used for looking up product-specific sim files.
+ * e.g. "hoodie-black.jpg" → product is "hoodie"
+ *      "coach-navy.jpg"   → product is "coach"
+ *      "tee-red.jpg"      → product is "tee"
+ */
+const PRODUCT_PREFIXES = [
+  "hoodie", "hoodieback", "ythhoodie", "ythhoodieback",
+  "toddlerhoodie", "toddlerhoodieback", "jha009", "jha009back",
+  "coach", "coachback",
+  "workshirt", "workshirtback",
+  "sweat", "sweatback", "youthsweat", "youthsweatback",
+  "toddlersweat", "toddlersweatback",
+  "onesie",
+  "lstee", "lsteeback", "lsteehoodie", "lsteehoodieback",
+  "performancelstee", "performancelsteeback",
+  "tank", "tankback",
+  "sleeveless", "sleevelessback",
+  "raglan", "raglanback",
+  "ring", "ringback",
+  "nl6733", "nl3900", "nl3900back",
+  "64v00l", "64v00lback",
+  "youthtee", "youthteeback",
+  "toddlertee", "toddlerteeback",
+  "lunchbox",
+  "tote", "sportbag",
+  "5300",
+  "nltbtee",
+  "tee", "teeback",
+  "td1000",
+  "trucker",
+  "ottowashed6p",
+  "g5000real", "g5000realb", "g5000realc",
+];
+
+/**
+ * Extract product type from the template filename.
+ * Returns the product prefix that matches.
+ * e.g. "hoodie-black" → "hoodie"
+ *      "workshirt-navy" → "workshirt"
+ *      "tee-red" → "tee"
+ */
+function getProductFromTemplate(templateName) {
+  // templateName is like "hoodie-black" (no extension)
+  const lower = templateName.toLowerCase();
+  // Sort by length descending so longer prefixes match first
+  // (e.g. "hoodieback" before "hoodie", "workshirt" before "work")
+  const sorted = PRODUCT_PREFIXES.slice().sort((a, b) => b.length - a.length);
+  for (const prefix of sorted) {
+    if (lower.startsWith(prefix + "-") || lower === prefix) {
+      return prefix;
+    }
+  }
+  return null;
+}
+
+/**
+ * Map product prefixes to the sim file product key used by Design Pipeline.
+ * The pipeline generates sims named like: 4001-tee-sim.png, 4001-hoodie-sim.png
+ * Multiple autogen prefixes map to the same pipeline product.
+ */
+const PRODUCT_TO_SIM_KEY = {
+  "tee": "tee", "teeback": "tee",
+  "hoodie": "hoodie", "hoodieback": "hoodie",
+  "jha009": "hoodie", "jha009back": "hoodie",
+  "ythhoodie": "hoodie", "ythhoodieback": "hoodie",
+  "toddlerhoodie": "hoodie", "toddlerhoodieback": "hoodie",
+  "coach": "coach", "coachback": "coach",
+  "workshirt": "workshirt", "workshirtback": "workshirt",
+  "sweat": "hoodie", "sweatback": "hoodie",
+  "youthsweat": "hoodie", "youthsweatback": "hoodie",
+  "toddlersweat": "hoodie", "toddlersweatback": "hoodie",
+  "onesie": "onesie",
+  "lstee": "tee", "lsteeback": "tee",
+  "lsteehoodie": "hoodie", "lsteehoodieback": "hoodie",
+  "performancelstee": "tee", "performancelsteeback": "tee",
+  "tank": "tee", "tankback": "tee",
+  "sleeveless": "tee", "sleevelessback": "tee",
+  "raglan": "tee", "raglanback": "tee",
+  "ring": "tee", "ringback": "tee",
+  "nl6733": "tee",
+  "nl3900": "tee", "nl3900back": "tee",
+  "64v00l": "tee", "64v00lback": "tee",
+  "youthtee": "tee", "youthteeback": "tee",
+  "toddlertee": "tee", "toddlerteeback": "tee",
+  "5300": "tee",
+  "nltbtee": "tee",
+  "td1000": "tee",
+  "lunchbox": "lunchbox",
+  "tote": "tee",
+  "sportbag": "tee",
+  "trucker": "hat",
+  "ottowashed6p": "hat",
+  "g5000real": "tee", "g5000realb": "tee", "g5000realc": "tee",
+};
+
+/**
  * Send the fallback placeholder JPEG
  */
 const sendFallback = (res) => {
@@ -108,47 +206,76 @@ const downloadImage = async (url, fileName) => {
 };
 
 /**
+ * Try to download a design file, return true if successful
+ */
+const tryDownloadDesign = async (designFile) => {
+  const localDesign = root(designFolder(designFile));
+  const isFileExist = await checkIfFileExists(localDesign);
+  if (isFileExist) return true;
+
+  try {
+    const designLink = generateDownloadLink(designFile);
+    const isDownloaded = await downloadImage(designLink, designFile);
+    return isDownloaded;
+  } catch (err) {
+    return false;
+  }
+};
+
+/**
  * Generate image
+ * NOW SUPPORTS PER-PRODUCT SIM FILES:
+ * 1. Parse the request to get template name and design number
+ * 2. Determine the product type from the template name
+ * 3. Try product-specific sim first (e.g. 4001-hoodie-sim.png)
+ * 4. Fall back to generic sim (e.g. 4001.png)
+ *
  * @param {string} file
  * @returns {boolean or object}
  */
 const generateImage = async (file) => {
   const indexSeparator = file.indexOf("-", file.indexOf("-") + 1);
   const templateFile = JPGExt(file.slice(0, indexSeparator));
-  const designFile = file.slice(indexSeparator + 1).replace(".jpg", ".png");
-  const localDesign = root(designFolder(designFile));
+  const designNumber = file.slice(indexSeparator + 1).replace(".jpg", "");
+  const templateName = file.slice(0, indexSeparator);
   const localTemplate = root(templateFolder(templateFile));
   const output = root(outputFolder(file));
 
   try {
-    const isFileExist = await checkIfFileExists(localDesign);
-    if (!isFileExist) {
-      const designLink = generateDownloadLink(designFile);
-      const isDownloaded = await downloadImage(designLink, designFile);
-      if (!isDownloaded) return false;
+    // Determine which product this is
+    const product = getProductFromTemplate(templateName);
+    const simKey = product ? (PRODUCT_TO_SIM_KEY[product] || null) : null;
+
+    let designFile = null;
+    let localDesign = null;
+
+    // Strategy 1: Try product-specific sim file (e.g. "4001-hoodie-sim.png")
+    if (simKey && simKey !== "tee") {
+      const productSimFile = `${designNumber}-${simKey}-sim.png`;
+      const downloaded = await tryDownloadDesign(productSimFile);
+      if (downloaded) {
+        designFile = productSimFile;
+        localDesign = root(designFolder(productSimFile));
+        console.log(`[autogen] using product sim: ${productSimFile}`);
+      }
     }
 
-    // Get template dimensions so we can resize the design to fit
-    const templateMeta = await sharp(localTemplate).metadata();
-    const designMeta = await sharp(localDesign).metadata();
-
-    let designInput = localDesign;
-
-    // If design is larger than template, resize it to fit within template bounds
-    if (designMeta.width > templateMeta.width || designMeta.height > templateMeta.height) {
-      designInput = await sharp(localDesign)
-        .resize({
-          width: templateMeta.width,
-          height: templateMeta.height,
-          fit: 'inside',
-          background: { r: 0, g: 0, b: 0, alpha: 0 }
-        })
-        .png()
-        .toBuffer();
+    // Strategy 2: Fall back to generic sim file (e.g. "4001.png")
+    if (!designFile) {
+      const genericFile = `${designNumber}.png`;
+      const localGeneric = root(designFolder(genericFile));
+      const isFileExist = await checkIfFileExists(localGeneric);
+      if (!isFileExist) {
+        const designLink = generateDownloadLink(genericFile);
+        const isDownloaded = await downloadImage(designLink, genericFile);
+        if (!isDownloaded) return false;
+      }
+      designFile = genericFile;
+      localDesign = localGeneric;
     }
 
     const image = await sharp(localTemplate)
-      .composite([{ input: designInput }])
+      .composite([{ input: localDesign }])
       .toFile(output);
 
     return image;
@@ -185,8 +312,49 @@ server.get("/autogen/:file", async (req, res) => {
   }
 });
 
+/**
+ * Cache-busting endpoint: forces re-generation by deleting cached output
+ * Use when a design's sim file has been updated and you need fresh mockups
+ * Example: GET /bust/hoodie-black-4001.jpg
+ */
+server.get("/bust/:file", async (req, res) => {
+  const fileName = req.params.file;
+  const outputFile = root(outputFolder(fileName));
+  const designNumber = fileName.slice(fileName.indexOf("-", fileName.indexOf("-") + 1) + 1).replace(".jpg", "");
+
+  try {
+    // Delete cached output
+    const outputExists = await checkIfFileExists(outputFile);
+    if (outputExists) {
+      fs.unlinkSync(outputFile);
+    }
+
+    // Delete cached design files for this number (all variants)
+    const designDir = root("design");
+    const designFiles = fs.readdirSync(designDir).filter(f => f.startsWith(designNumber));
+    designFiles.forEach(f => {
+      try { fs.unlinkSync(path.join(designDir, f)); } catch(e) {}
+    });
+
+    // Now regenerate
+    const start = Date.now();
+    const output = await withTimeout(generateImage(fileName), GENERATION_TIMEOUT_MS);
+    const duration = Date.now() - start;
+
+    if (output) {
+      console.log(`[bust] regenerated: ${fileName} (${duration}ms)`);
+      return res.type("jpg").sendFile(root(outputFolder(fileName)));
+    }
+
+    return sendFallback(res);
+  } catch (err) {
+    console.log(`[bust] failed: ${fileName} - ${err.message}`);
+    return sendFallback(res);
+  }
+});
+
 server.get("/", async (req, res) => {
-  res.send("Hello from template simulation app!");
+  res.send("Hello from template simulation app! v2.1 — per-product sim support");
 });
 
 server.listen(process.env.PORT, () => {
