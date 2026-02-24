@@ -207,15 +207,20 @@ const downloadImage = async (url, fileName) => {
 
 /**
  * Try to download a design file, return true if successful
+ * @param {string} designFile - local filename to save as
+ * @param {string} remotePath - remote path (may include subfolder like "sims/")
  */
-const tryDownloadDesign = async (designFile) => {
+const tryDownloadDesign = async (designFile, remotePath) => {
   const localDesign = root(designFolder(designFile));
   const isFileExist = await checkIfFileExists(localDesign);
   if (isFileExist) return true;
 
   try {
-    const designLink = generateDownloadLink(designFile);
-    const isDownloaded = await downloadImage(designLink, designFile);
+    // remotePath allows us to look in subfolders like "sims/"
+    const url = remotePath
+      ? new URL(`${process.env.BASE_DESIGN_URL}${remotePath}`)
+      : generateDownloadLink(designFile);
+    const isDownloaded = await downloadImage(url, designFile);
     return isDownloaded;
   } catch (err) {
     return false;
@@ -249,18 +254,21 @@ const generateImage = async (file) => {
     let designFile = null;
     let localDesign = null;
 
-    // Strategy 1: Try product-specific sim file (e.g. "4001-hoodie-sim.png")
-    if (simKey && simKey !== "tee") {
+    // Strategy 1: Try product-specific sim file from /sims/ folder
+    // Pipeline uploads to: assets.gooderlabs.com/sims/167-hoodie-sim.png
+    if (simKey) {
       const productSimFile = `${designNumber}-${simKey}-sim.png`;
-      const downloaded = await tryDownloadDesign(productSimFile);
+      const remotePath = `sims/${productSimFile}`;
+      const downloaded = await tryDownloadDesign(productSimFile, remotePath);
       if (downloaded) {
         designFile = productSimFile;
         localDesign = root(designFolder(productSimFile));
-        console.log(`[autogen] using product sim: ${productSimFile}`);
+        console.log(`[autogen] using product sim from /sims/: ${productSimFile}`);
       }
     }
 
-    // Strategy 2: Fall back to generic sim file (e.g. "4001.png")
+    // Strategy 2: Fall back to generic design file at root
+    // Pipeline uploads to: assets.gooderlabs.com/167.png
     if (!designFile) {
       const genericFile = `${designNumber}.png`;
       const localGeneric = root(designFolder(genericFile));
@@ -272,6 +280,7 @@ const generateImage = async (file) => {
       }
       designFile = genericFile;
       localDesign = localGeneric;
+      console.log(`[autogen] using generic fallback: ${genericFile}`);
     }
 
     const image = await sharp(localTemplate)
@@ -354,7 +363,7 @@ server.get("/bust/:file", async (req, res) => {
 });
 
 server.get("/", async (req, res) => {
-  res.send("Hello from template simulation app! v2.1 — per-product sim support");
+  res.send("Hello from template simulation app! v2.2 — fixed /sims/ path for per-product sim files");
 });
 
 server.listen(process.env.PORT, () => {
