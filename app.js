@@ -18,15 +18,10 @@ const templateFolder = (file) => `template/${file}`;
 const outputFolder = (file) => `output/${file}`;
 const JPGExt = (file) => `${file}.jpg`;
 const FALLBACK_JPG = root("template/fallback.jpg");
-const GENERATION_TIMEOUT_MS = 10000;
+const GENERATION_TIMEOUT_MS = 15000;
 
 /**
  * ═══════ PRODUCT PREFIX MAP ═══════
- * Maps the first part of the template filename to a product type
- * used for looking up product-specific sim files.
- * e.g. "hoodie-black.jpg" → product is "hoodie"
- *      "coach-navy.jpg"   → product is "coach"
- *      "tee-red.jpg"      → product is "tee"
  */
 const PRODUCT_PREFIXES = [
   "hoodie", "hoodieback", "ythhoodie", "ythhoodieback",
@@ -59,16 +54,9 @@ const PRODUCT_PREFIXES = [
 
 /**
  * Extract product type from the template filename.
- * Returns the product prefix that matches.
- * e.g. "hoodie-black" → "hoodie"
- *      "workshirt-navy" → "workshirt"
- *      "tee-red" → "tee"
  */
 function getProductFromTemplate(templateName) {
-  // templateName is like "hoodie-black" (no extension)
   const lower = templateName.toLowerCase();
-  // Sort by length descending so longer prefixes match first
-  // (e.g. "hoodieback" before "hoodie", "workshirt" before "work")
   const sorted = PRODUCT_PREFIXES.slice().sort((a, b) => b.length - a.length);
   for (const prefix of sorted) {
     if (lower.startsWith(prefix + "-") || lower === prefix) {
@@ -79,24 +67,14 @@ function getProductFromTemplate(templateName) {
 }
 
 /**
- * Map product prefixes to the sim file product key used by Design Pipeline.
- * The pipeline generates sims named like: 4001-tee-sim.png, 4001-hoodie-sim.png
- * Multiple autogen prefixes map to the same pipeline product.
+ * Map product prefixes to placement config keys.
+ * Multiple autogen prefixes map to the same placement.
  */
-const PRODUCT_TO_SIM_KEY = {
+const PRODUCT_TO_PLACEMENT = {
+  // Standard tees — use tee placement
   "tee": "tee", "teeback": "tee",
-  "hoodie": "hoodie", "hoodieback": "hoodie",
-  "jha009": "hoodie", "jha009back": "hoodie",
-  "ythhoodie": "hoodie", "ythhoodieback": "hoodie",
-  "toddlerhoodie": "hoodie", "toddlerhoodieback": "hoodie",
-  "coach": "coach", "coachback": "coach",
-  "workshirt": "workshirt", "workshirtback": "workshirt",
-  "sweat": "hoodie", "sweatback": "hoodie",
-  "youthsweat": "hoodie", "youthsweatback": "hoodie",
-  "toddlersweat": "hoodie", "toddlersweatback": "hoodie",
-  "onesie": "onesie",
+  "nltbtee": "tee", "5300": "tee",
   "lstee": "tee", "lsteeback": "tee",
-  "lsteehoodie": "hoodie", "lsteehoodieback": "hoodie",
   "performancelstee": "tee", "performancelsteeback": "tee",
   "tank": "tee", "tankback": "tee",
   "sleeveless": "tee", "sleevelessback": "tee",
@@ -107,15 +85,111 @@ const PRODUCT_TO_SIM_KEY = {
   "64v00l": "tee", "64v00lback": "tee",
   "youthtee": "tee", "youthteeback": "tee",
   "toddlertee": "tee", "toddlerteeback": "tee",
-  "5300": "tee",
-  "nltbtee": "tee",
   "td1000": "tee",
-  "lunchbox": "lunchbox",
+  "g5000real": "tee", "g5000realb": "tee", "g5000realc": "tee",
   "tote": "tee",
-  "sportbag": "tee",
+
+  // Hoodies
+  "hoodie": "hoodie", "hoodieback": "hoodie",
+  "jha009": "hoodie", "jha009back": "hoodie",
+  "ythhoodie": "hoodie", "ythhoodieback": "hoodie",
+  "toddlerhoodie": "hoodie", "toddlerhoodieback": "hoodie",
+  "lsteehoodie": "hoodie", "lsteehoodieback": "hoodie",
+
+  // Sweatshirts
+  "sweat": "sweat", "sweatback": "sweat",
+  "youthsweat": "sweat", "youthsweatback": "sweat",
+  "toddlersweat": "sweat", "toddlersweatback": "sweat",
+
+  // Coach jacket
+  "coach": "coach", "coachback": "coach",
+
+  // Workshirt — similar to coach
+  "workshirt": "coach", "workshirtback": "coach",
+
+  // Onesie
+  "onesie": "onesie",
+
+  // Lunchbox
+  "lunchbox": "lunchbox",
+
+  // Sport bag
+  "sportbag": "sportbag",
+
+  // Hats
   "trucker": "hat",
   "ottowashed6p": "hat",
-  "g5000real": "tee", "g5000realb": "tee", "g5000realc": "tee",
+};
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════
+ * PER-PRODUCT PLACEMENT CONFIG  (v4.0 — locked 2026-02-24)
+ * ═══════════════════════════════════════════════════════════════════════
+ * Canvas: 826 x 1011
+ * ~35 pixels per inch
+ *
+ * The design PNG from R2 ({number}.png) has the design positioned for a
+ * tee (centered, 15% from top). For other products, we extract the design
+ * from the PNG and reposition it according to these specs.
+ *
+ * For "tee" placement, we use the PNG as-is (no repositioning needed).
+ * ═══════════════════════════════════════════════════════════════════════
+ */
+const PLACEMENT_CONFIG = {
+  tee: {
+    // Baseline — use the sim PNG as-is, no repositioning
+    reposition: false,
+  },
+  hoodie: {
+    reposition: true,
+    designWidthPct: 0.50,    // ~413px
+    pasteYPct: 0.24,         // ~243px from top
+    maxHeightPct: 0.38,      // ~384px
+    leftChest: false,
+  },
+  sweat: {
+    reposition: true,
+    designWidthPct: 0.445,   // 10.5"
+    pasteYPct: 0.23,         // ~233px
+    maxHeightPct: 0.52,      // 15"
+    leftChest: false,
+  },
+  coach: {
+    reposition: true,
+    designWidthPct: 0.190,   // 4.5" = ~157px
+    pasteYPct: 0.28,         // below collar
+    maxHeightPct: 0.156,     // 4.5" = ~158px
+    leftChest: true,
+    pasteXPct: 0.55,         // wearer's left = viewer's right
+  },
+  onesie: {
+    reposition: true,
+    designWidthPct: 0.40,    // ~330px
+    pasteYPct: 0.17,         // ~172px
+    maxHeightPct: 0.48,      // ~485px
+    leftChest: false,
+  },
+  lunchbox: {
+    reposition: true,
+    designWidthPct: 0.75,    // ~619px — ridge to ridge
+    pasteYPct: 0.21,         // ~212px — in the panel
+    maxHeightPct: 0.43,      // ~435px
+    leftChest: false,
+  },
+  sportbag: {
+    reposition: true,
+    designWidthPct: 0.55,    // ~454px
+    pasteYPct: 0.29,         // ~293px — below drawstrings
+    maxHeightPct: 0.48,      // ~485px
+    leftChest: false,
+  },
+  hat: {
+    reposition: true,
+    designWidthPct: 0.35,    // ~289px
+    pasteYPct: 0.22,         // ~222px
+    maxHeightPct: 0.30,      // ~303px
+    leftChest: false,
+  },
 };
 
 /**
@@ -140,56 +214,34 @@ const withTimeout = (promise, ms) => {
 
 /**
  * Check if file exists
- *
- * @param {string} file
- * @returns {Promise}
  */
 const checkIfFileExists = (file) => {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     fs.access(file, fs.constants.F_OK, (err) => {
-      if (err == null) {
-        resolve(true);
-      }
-      resolve(false);
+      resolve(err == null);
     });
   });
 };
 
 /**
- * Create image from downloaded image file
- *
- * @param {string} path
- * @param {string} data
- * @returns {Promise}
+ * Write file to disk
  */
 const createImage = (path, data) => {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     fs.writeFile(path, data, (err) => {
-      if (err == null) {
-        resolve(true);
-      }
-
-      resolve(false);
+      resolve(err == null);
     });
   });
 };
 
 /**
- * Generate download link
- * add base url to file name
- *
- * @param {array} file
- * @returns array
+ * Generate download link from BASE_DESIGN_URL
  */
 const generateDownloadLink = (file) =>
   new URL(`${process.env.BASE_DESIGN_URL}${file}`);
 
 /**
- * Download image from source url
- *
- * @param {string} url
- * @param {string} fileName
- * @return {boolean}
+ * Download image from URL
  */
 const downloadImage = async (url, fileName) => {
   const image = await fetch(new URL(url));
@@ -206,37 +258,92 @@ const downloadImage = async (url, fileName) => {
 };
 
 /**
- * Try to download a design file, return true if successful
- * @param {string} designFile - local filename to save as
- * @param {string} remotePath - remote path (may include subfolder like "sims/")
+ * Extract the design from an existing sim PNG.
+ * The sim is 826x1011 with the design on a transparent background.
+ * We trim the transparent edges to get just the design.
+ *
+ * Returns a sharp instance of the extracted design, or null.
  */
-const tryDownloadDesign = async (designFile, remotePath) => {
-  const localDesign = root(designFolder(designFile));
-  const isFileExist = await checkIfFileExists(localDesign);
-  if (isFileExist) return true;
-
+const extractDesignFromSim = async (simPath) => {
   try {
-    // remotePath allows us to look in subfolders like "sims/"
-    const url = remotePath
-      ? new URL(`${process.env.BASE_DESIGN_URL}${remotePath}`)
-      : generateDownloadLink(designFile);
-    const isDownloaded = await downloadImage(url, designFile);
-    return isDownloaded;
+    const trimmed = await sharp(simPath)
+      .trim()  // removes transparent/solid borders
+      .toBuffer({ resolveWithObject: true });
+
+    if (trimmed.info.width < 10 || trimmed.info.height < 10) {
+      return null;
+    }
+
+    return { buffer: trimmed.data, width: trimmed.info.width, height: trimmed.info.height };
   } catch (err) {
-    return false;
+    console.log(`[autogen] extract failed: ${err.message}`);
+    return null;
   }
 };
 
 /**
- * Generate image
- * NOW SUPPORTS PER-PRODUCT SIM FILES:
- * 1. Parse the request to get template name and design number
- * 2. Determine the product type from the template name
- * 3. Try product-specific sim first (e.g. 4001-hoodie-sim.png)
- * 4. Fall back to generic sim (e.g. 4001.png)
+ * Reposition a design for a specific product.
+ * Takes the extracted design and places it on a new 826x1011 canvas
+ * according to the product's placement config.
  *
- * @param {string} file
- * @returns {boolean or object}
+ * Returns buffer of the repositioned sim PNG.
+ */
+const repositionDesign = async (designBuffer, designWidth, designHeight, placementKey) => {
+  const config = PLACEMENT_CONFIG[placementKey];
+  if (!config || !config.reposition) return null;
+
+  const canvasW = 826;
+  const canvasH = 1011;
+
+  // Calculate target size
+  const maxW = Math.round(canvasW * config.designWidthPct);
+  const maxH = Math.round(canvasH * config.maxHeightPct);
+
+  const scaleW = maxW / designWidth;
+  const scaleH = maxH / designHeight;
+  const scale = Math.min(scaleW, scaleH);
+
+  const newW = Math.round(designWidth * scale);
+  const newH = Math.round(designHeight * scale);
+
+  // Resize the design
+  const resized = await sharp(designBuffer)
+    .resize(newW, newH, { fit: 'inside' })
+    .toBuffer();
+
+  // Calculate position
+  const pasteY = Math.round(canvasH * config.pasteYPct);
+  let pasteX;
+  if (config.leftChest) {
+    pasteX = Math.round(canvasW * config.pasteXPct);
+  } else {
+    pasteX = Math.round((canvasW - newW) / 2);
+  }
+
+  // Create transparent canvas and composite
+  const canvas = await sharp({
+    create: {
+      width: canvasW,
+      height: canvasH,
+      channels: 4,
+      background: { r: 0, g: 0, b: 0, alpha: 0 }
+    }
+  })
+    .png()
+    .composite([{ input: resized, top: pasteY, left: pasteX }])
+    .toBuffer();
+
+  return canvas;
+};
+
+/**
+ * Generate image — NOW WITH PER-PRODUCT REPOSITIONING
+ *
+ * 1. Parse request to get template name and design number
+ * 2. Determine product type from template name
+ * 3. Download the generic sim ({number}.png) from R2
+ * 4. If product needs repositioning, extract design and reposition
+ * 5. Composite onto the garment template
  */
 const generateImage = async (file) => {
   const indexSeparator = file.indexOf("-", file.indexOf("-") + 1);
@@ -247,48 +354,63 @@ const generateImage = async (file) => {
   const output = root(outputFolder(file));
 
   try {
-    // Determine which product this is
+    // Step 1: Download the generic sim PNG
+    const genericFile = `${designNumber}.png`;
+    const localGeneric = root(designFolder(genericFile));
+    const isFileExist = await checkIfFileExists(localGeneric);
+    if (!isFileExist) {
+      const designLink = generateDownloadLink(genericFile);
+      const isDownloaded = await downloadImage(designLink, genericFile);
+      if (!isDownloaded) return false;
+    }
+
+    // Step 2: Determine product and whether we need to reposition
     const product = getProductFromTemplate(templateName);
-    const simKey = product ? (PRODUCT_TO_SIM_KEY[product] || null) : null;
+    const placementKey = product ? (PRODUCT_TO_PLACEMENT[product] || "tee") : "tee";
+    const config = PLACEMENT_CONFIG[placementKey];
 
-    let designFile = null;
-    let localDesign = null;
+    let compositeInput = localGeneric;
 
-    // Strategy 1: Try product-specific sim file from /sims/ folder
-    // Pipeline uploads to: assets.gooderlabs.com/sims/167-hoodie-sim.png
-    if (simKey) {
-      const productSimFile = `${designNumber}-${simKey}-sim.png`;
-      const remotePath = `sims/${productSimFile}`;
-      const downloaded = await tryDownloadDesign(productSimFile, remotePath);
-      if (downloaded) {
-        designFile = productSimFile;
-        localDesign = root(designFolder(productSimFile));
-        console.log(`[autogen] using product sim from /sims/: ${productSimFile}`);
+    // Step 3: If this product needs repositioning, do it
+    if (config && config.reposition) {
+      // Check if we already have a repositioned version cached
+      const reposFile = `${designNumber}-${placementKey}.png`;
+      const localRepos = root(designFolder(reposFile));
+      const reposExists = await checkIfFileExists(localRepos);
+
+      if (reposExists) {
+        compositeInput = localRepos;
+        console.log(`[autogen] using cached repositioned: ${reposFile}`);
+      } else {
+        // Extract design from generic sim and reposition
+        const extracted = await extractDesignFromSim(localGeneric);
+        if (extracted) {
+          const repositioned = await repositionDesign(
+            extracted.buffer, extracted.width, extracted.height, placementKey
+          );
+          if (repositioned) {
+            await createImage(localRepos, repositioned);
+            compositeInput = localRepos;
+            console.log(`[autogen] repositioned for ${placementKey}: ${reposFile}`);
+          } else {
+            console.log(`[autogen] reposition failed, using generic for ${placementKey}`);
+          }
+        } else {
+          console.log(`[autogen] extract failed, using generic`);
+        }
       }
+    } else {
+      console.log(`[autogen] tee placement, using generic as-is`);
     }
 
-    // Strategy 2: Fall back to generic design file at root
-    // Pipeline uploads to: assets.gooderlabs.com/167.png
-    if (!designFile) {
-      const genericFile = `${designNumber}.png`;
-      const localGeneric = root(designFolder(genericFile));
-      const isFileExist = await checkIfFileExists(localGeneric);
-      if (!isFileExist) {
-        const designLink = generateDownloadLink(genericFile);
-        const isDownloaded = await downloadImage(designLink, genericFile);
-        if (!isDownloaded) return false;
-      }
-      designFile = genericFile;
-      localDesign = localGeneric;
-      console.log(`[autogen] using generic fallback: ${genericFile}`);
-    }
-
+    // Step 4: Composite onto garment template
     const image = await sharp(localTemplate)
-      .composite([{ input: localDesign }])
+      .composite([{ input: compositeInput }])
       .toFile(output);
 
     return image;
   } catch (err) {
+    console.log(`[autogen] error: ${err.message}`);
     console.log(err);
   }
 };
@@ -323,8 +445,8 @@ server.get("/autogen/:file", async (req, res) => {
 
 /**
  * Cache-busting endpoint: forces re-generation by deleting cached output
- * Use when a design's sim file has been updated and you need fresh mockups
- * Example: GET /bust/hoodie-black-4001.jpg
+ * and all cached repositioned designs for this design number.
+ * Example: GET /bust/hoodie-black-167.jpg
  */
 server.get("/bust/:file", async (req, res) => {
   const fileName = req.params.file;
@@ -338,12 +460,14 @@ server.get("/bust/:file", async (req, res) => {
       fs.unlinkSync(outputFile);
     }
 
-    // Delete cached design files for this number (all variants)
+    // Delete ALL cached design files for this number (generic + repositioned)
     const designDir = root("design");
     const designFiles = fs.readdirSync(designDir).filter(f => f.startsWith(designNumber));
     designFiles.forEach(f => {
       try { fs.unlinkSync(path.join(designDir, f)); } catch(e) {}
     });
+
+    console.log(`[bust] cleared ${designFiles.length} cached files for design ${designNumber}`);
 
     // Now regenerate
     const start = Date.now();
@@ -362,8 +486,42 @@ server.get("/bust/:file", async (req, res) => {
   }
 });
 
+/**
+ * Bust ALL outputs for a design number across all products
+ * Example: GET /bust-all/167
+ */
+server.get("/bust-all/:designNumber", async (req, res) => {
+  const designNumber = req.params.designNumber;
+
+  try {
+    // Delete all cached design files
+    const designDir = root("design");
+    const designFiles = fs.readdirSync(designDir).filter(f => f.startsWith(designNumber));
+    designFiles.forEach(f => {
+      try { fs.unlinkSync(path.join(designDir, f)); } catch(e) {}
+    });
+
+    // Delete all cached output files
+    const outputDir = root("output");
+    const outputFiles = fs.readdirSync(outputDir).filter(f => f.includes(`-${designNumber}.jpg`));
+    outputFiles.forEach(f => {
+      try { fs.unlinkSync(path.join(outputDir, f)); } catch(e) {}
+    });
+
+    res.json({
+      success: true,
+      designNumber,
+      clearedDesignFiles: designFiles.length,
+      clearedOutputFiles: outputFiles.length,
+      message: `Cache cleared. Next request for any product with design ${designNumber} will regenerate with correct positioning.`
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 server.get("/", async (req, res) => {
-  res.send("Hello from template simulation app! v2.2 — fixed /sims/ path for per-product sim files");
+  res.send("Hello from template simulation app! v4.0 — per-product repositioning at render time");
 });
 
 server.listen(process.env.PORT, () => {
