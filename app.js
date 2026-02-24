@@ -6,7 +6,7 @@ const { URL } = require("url");
 const path = require("path");
 const fs = require("fs");
 const server = express();
-
+server.use((req, res, next) => { res.set("Access-Control-Allow-Origin", "*"); next(); });
 /**
  * Helper functions for
  * creating directory paths
