@@ -353,8 +353,53 @@ server.get("/bust/:file", async (req, res) => {
   }
 });
 
+/**
+ * Bust ALL cached mockups for a design number at once.
+ * Deletes every output image and design cache file for the given number.
+ * Example: GET /bust-design/175
+ * After this, every mockup for design 175 will regenerate fresh from R2.
+ */
+server.get("/bust-design/:designNum", async (req, res) => {
+  const designNum = req.params.designNum;
+  let deletedOutput = 0;
+  let deletedDesign = 0;
+
+  try {
+    // Delete ALL output files for this design number (tee-black-175.jpg, hoodie-navy-175.jpg, etc.)
+    const outputDir = root("output");
+    if (fs.existsSync(outputDir)) {
+      const outputFiles = fs.readdirSync(outputDir).filter(f => f.endsWith(`-${designNum}.jpg`));
+      outputFiles.forEach(f => {
+        try { fs.unlinkSync(path.join(outputDir, f)); deletedOutput++; } catch(e) {}
+      });
+    }
+
+    // Delete ALL cached design/sim files for this number (175.png, 175-hoodie-sim.png, etc.)
+    const designDir = root("design");
+    if (fs.existsSync(designDir)) {
+      const designFiles = fs.readdirSync(designDir).filter(f => f.startsWith(designNum + '.') || f.startsWith(designNum + '-'));
+      designFiles.forEach(f => {
+        try { fs.unlinkSync(path.join(designDir, f)); deletedDesign++; } catch(e) {}
+      });
+    }
+
+    console.log(`[bust-design] Cleared design ${designNum}: ${deletedOutput} outputs, ${deletedDesign} design files`);
+
+    res.json({
+      success: true,
+      designNum,
+      deletedOutput,
+      deletedDesign,
+      message: `Cleared ${deletedOutput} mockups and ${deletedDesign} design files for design ${designNum}`
+    });
+  } catch (err) {
+    console.log(`[bust-design] Error: ${err.message}`);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 server.get("/", async (req, res) => {
-  res.send("Hello from template simulation app! v2.1 — per-product sim support");
+  res.send("Hello from template simulation app! v2.2 — per-product sim support + bulk cache bust");
 });
 
 server.listen(process.env.PORT, () => {
