@@ -125,10 +125,30 @@ const generateDownloadLink = (file) =>
 
 const downloadImage = async (url, fileName) => {
   const image = await fetch(new URL(url));
+
+  // ── FIX: Check HTTP status before processing ──
+  // Previously, a 404 from R2/Cloudflare would return an HTML error page
+  // that was > 7000 bytes, passing the size check and getting saved as
+  // a "PNG" file. Sharp would then fail with "unsupported image format".
+  if (!image.ok) {
+    console.log(`[autogen] download failed (HTTP ${image.status}): ${url}`);
+    return false;
+  }
+
   const buffer = await image.buffer();
   const filePath = root(designFolder(fileName));
   try {
     if (buffer.length < 7000) return false;
+
+    // ── FIX: Validate PNG magic bytes ──
+    // Ensure the downloaded file is actually a PNG image, not an
+    // HTML error page or other non-image response.
+    const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47]); // \x89PNG
+    if (!buffer.slice(0, 4).equals(PNG_MAGIC)) {
+      console.log(`[autogen] download not a valid PNG (got ${buffer.slice(0, 4).toString('hex')}): ${fileName}`);
+      return false;
+    }
+
     const isCreated = await createImage(filePath, buffer);
     if (isCreated) return true;
     return false;
@@ -140,7 +160,26 @@ const downloadImage = async (url, fileName) => {
 const tryDownloadDesign = async (designFile) => {
   const localDesign = root(designFolder(designFile));
   const isFileExist = await checkIfFileExists(localDesign);
-  if (isFileExist) return true;
+  if (isFileExist) {
+    // ── FIX: Validate cached files aren't corrupted HTML from prior bad downloads ──
+    try {
+      const head = Buffer.alloc(4);
+      const fd = fs.openSync(localDesign, 'r');
+      fs.readSync(fd, head, 0, 4, 0);
+      fs.closeSync(fd);
+      const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+      if (!head.equals(PNG_MAGIC)) {
+        console.log(`[autogen] removing corrupted cached file: ${designFile}`);
+        fs.unlinkSync(localDesign);
+        // Fall through to re-download
+      } else {
+        return true;
+      }
+    } catch (err) {
+      // If we can't read it, remove and re-download
+      try { fs.unlinkSync(localDesign); } catch(e) {}
+    }
+  }
   try {
     const designLink = generateDownloadLink(designFile);
     const isDownloaded = await downloadImage(designLink, designFile);
