@@ -16,6 +16,12 @@ const JPGExt = (file) => `${file}.jpg`;
 const FALLBACK_JPG = root("template/fallback.jpg");
 const GENERATION_TIMEOUT_MS = 15000;
 
+// Ensure design/ and output/ directories exist at startup.
+// On Heroku eco dynos the filesystem is ephemeral and these dirs
+// may not exist if their .gitignore placeholders are ever removed.
+if (!fs.existsSync(root("design"))) fs.mkdirSync(root("design"), { recursive: true });
+if (!fs.existsSync(root("output"))) fs.mkdirSync(root("output"), { recursive: true });
+
 /**
  * PRODUCT PREFIX MAP
  */
@@ -361,7 +367,7 @@ server.get("/bust-design/:designNum", async (req, res) => {
 });
 
 server.get("/", async (req, res) => {
-  res.send("Hello from template simulation app! v2.3 — auto-resize fix");
+  res.send("Hello from template simulation app! v2.4 — download validation fix");
 });
 
 server.listen(process.env.PORT, () => {
