@@ -268,9 +268,24 @@ const generateImage = async (file) => {
       compositeInput = localDesign;
     }
 
-    const image = await sharp(localTemplate)
+    // ════════════════════════════════════════════════
+    // AMAZON-COMPLIANT OUTPUT (v2.0 — March 2026)
+    // 1. Composite design onto template
+    // 2. Flatten onto pure white background (#FFFFFF)
+    // 3. Resize to 1600px wide (Amazon zoom requirement)
+    // 4. Output JPEG at quality 92
+    // ════════════════════════════════════════════════
+    const composited = await sharp(localTemplate)
       .composite([{ input: compositeInput }])
+      .toBuffer();
+
+    const image = await sharp(composited)
+      .flatten({ background: { r: 255, g: 255, b: 255 } })
+      .resize(1600, null, { fit: 'inside', withoutEnlargement: false })
+      .jpeg({ quality: 92 })
       .toFile(output);
+
+    console.log(`[autogen] output: ${image.width}x${image.height}, ${(image.size/1024).toFixed(0)}KB`);
 
     return image;
   } catch (err) {
