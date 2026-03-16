@@ -127,7 +127,7 @@ const createImage = (path, data) => {
 };
 
 const generateDownloadLink = (file) =>
-  new URL(`${process.env.BASE_DESIGN_URL}${file}`);
+  new URL(`${process.env.BASE_DESIGN_URL}${file}?v=${Date.now()}`);
 
 const downloadImage = async (url, fileName) => {
   const image = await fetch(new URL(url));
