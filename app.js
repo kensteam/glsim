@@ -225,7 +225,7 @@ const generateImage = async (file) => {
       if (downloaded) {
         designFile = productSimFile;
         localDesign = root(designFolder(productSimFile));
-        console.log(`[autogen] using product sim: ${productSimFile}`);
+        console.log(`[autogen] strategy 1 (product sim): ${productSimFile}`);
       }
     }
 
@@ -241,6 +241,7 @@ const generateImage = async (file) => {
       }
       designFile = genericFile;
       localDesign = localGeneric;
+      console.log(`[autogen] strategy 2 (generic fallback): ${genericFile}`);
     }
 
     // ════════════════════════════════════════════════
