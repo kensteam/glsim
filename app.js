@@ -368,7 +368,7 @@ server.get("/bust-design/:designNum", async (req, res) => {
 
     const designDir = root("design");
     if (fs.existsSync(designDir)) {
-      fs.readdirSync(designDir).filter(f => f.startsWith(designNum + '.') || f.startsWith(designNum + '-')).forEach(f => {
+      fs.readdirSync(designDir).filter(f => f.startsWith(designNum)).forEach(f => {
         try { fs.unlinkSync(path.join(designDir, f)); deletedDesign++; } catch(e) {}
       });
     }
@@ -382,7 +382,7 @@ server.get("/bust-design/:designNum", async (req, res) => {
 });
 
 server.get("/", async (req, res) => {
-  res.send("Hello from template simulation app! v2.4 — download validation fix");
+  res.send("Hello from template simulation app! v2.5 — bust-design clears all sim files");
 });
 
 server.listen(process.env.PORT, () => {
