@@ -224,7 +224,7 @@ const generateImage = async (file) => {
     // FIXED: use flat local cache names — design/sims/ does not exist on Heroku
     // R2 path used for download only; flat name used for local caching
     const trySimFromR2 = async (r2Path) => {
-      const flatName = r2Path.replace(///g, '-');
+      const flatName = r2Path.split('/').join('-');
       const localPath = root(designFolder(flatName));
       if (await checkIfFileExists(localPath)) {
         try {
