@@ -22,6 +22,9 @@ const GENERATION_TIMEOUT_MS = 15000;
 if (!fs.existsSync(root("design"))) fs.mkdirSync(root("design"), { recursive: true });
 if (!fs.existsSync(root("output"))) fs.mkdirSync(root("output"), { recursive: true });
 
+sharp.cache(false);
+sharp.concurrency(1);
+
 /**
  * PRODUCT PREFIX MAP
  */
