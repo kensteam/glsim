@@ -221,42 +221,50 @@ const generateImage = async (file) => {
     let designFile = null;
     let localDesign = null;
 
-    // Strategy 1: Try product-specific sim file (in sims/ subfolder)
-    if (simKey && simKey !== "tee") {
-      const productSimFile = `${designNumber}-${simKey}-sim.png`;
-      const productSimPath = `sims/${productSimFile}`;
-      const downloaded = await tryDownloadDesign(productSimPath);
-      if (downloaded) {
-        designFile = productSimPath;
-        localDesign = root(designFolder(productSimPath));
-        console.log(`[autogen] strategy 1 (product sim): ${productSimPath}`);
+    // FIXED: use flat local cache names — design/sims/ does not exist on Heroku
+    // R2 path used for download only; flat name used for local caching
+    const trySimFromR2 = async (r2Path) => {
+      const flatName = r2Path.replace(///g, '-');
+      const localPath = root(designFolder(flatName));
+      if (await checkIfFileExists(localPath)) {
+        try {
+          const h = Buffer.alloc(4);
+          const fd = fs.openSync(localPath,'r');
+          fs.readSync(fd,h,0,4,0); fs.closeSync(fd);
+          if (h.equals(Buffer.from([0x89,0x50,0x4e,0x47]))) return localPath;
+          fs.unlinkSync(localPath);
+        } catch(e) { try{fs.unlinkSync(localPath);}catch(e2){} }
       }
-    }
+      const resp = await fetch(new URL(process.env.BASE_DESIGN_URL+r2Path+'?v='+Date.now()));
+      if (!resp.ok) { console.log('[autogen] '+r2Path+' returned '+resp.status); return null; }
+      const buf = await resp.buffer();
+      if (buf.length < 7000) return null;
+      if (!buf.slice(0,4).equals(Buffer.from([0x89,0x50,0x4e,0x47]))) return null;
+      await new Promise(resolve => fs.writeFile(localPath, buf, err => resolve(!err)));
+      return localPath;
+    };
 
-    // Strategy 2: Also try tee sim from sims/ folder before root fallback
+    // Strategy 1: Product-specific sim from R2 sims/ folder
+    if (simKey && simKey !== 'tee') {
+      const r2p = `sims/${designNumber}-${simKey}-sim.png`;
+      const loc = await trySimFromR2(r2p);
+      if (loc) { localDesign=loc; designFile=r2p; console.log('[autogen] S1 product: '+r2p); }
+    }
+    // Strategy 2: Tee sim from R2 sims/ folder
     if (!designFile) {
-      const teeSim = `sims/${designNumber}-tee-sim.png`;
-      const downloaded = await tryDownloadDesign(teeSim);
-      if (downloaded) {
-        designFile = teeSim;
-        localDesign = root(designFolder(teeSim));
-        console.log(`[autogen] strategy 2 (tee sim): ${teeSim}`);
-      }
+      const r2p = `sims/${designNumber}-tee-sim.png`;
+      const loc = await trySimFromR2(r2p);
+      if (loc) { localDesign=loc; designFile=r2p; console.log('[autogen] S2 tee: '+r2p); }
     }
-
-    // Strategy 3: Fall back to generic root sim file
+    // Strategy 3: Root fallback
     if (!designFile) {
       const genericFile = `${designNumber}.png`;
       const localGeneric = root(designFolder(genericFile));
-      const isFileExist = await checkIfFileExists(localGeneric);
-      if (!isFileExist) {
-        const designLink = generateDownloadLink(genericFile);
-        const isDownloaded = await downloadImage(designLink, genericFile);
-        if (!isDownloaded) return false;
+      if (!await checkIfFileExists(localGeneric)) {
+        if (!await downloadImage(generateDownloadLink(genericFile), genericFile)) return false;
       }
-      designFile = genericFile;
-      localDesign = localGeneric;
-      console.log(`[autogen] strategy 2 (generic fallback): ${genericFile}`);
+      designFile=genericFile; localDesign=localGeneric;
+      console.log('[autogen] S3 root fallback: '+genericFile);
     }
 
     // ════════════════════════════════════════════════
