@@ -218,18 +218,30 @@ const generateImage = async (file) => {
     let designFile = null;
     let localDesign = null;
 
-    // Strategy 1: Try product-specific sim file
+    // Strategy 1: Try product-specific sim file (in sims/ subfolder)
     if (simKey && simKey !== "tee") {
       const productSimFile = `${designNumber}-${simKey}-sim.png`;
-      const downloaded = await tryDownloadDesign(productSimFile);
+      const productSimPath = `sims/${productSimFile}`;
+      const downloaded = await tryDownloadDesign(productSimPath);
       if (downloaded) {
-        designFile = productSimFile;
-        localDesign = root(designFolder(productSimFile));
-        console.log(`[autogen] strategy 1 (product sim): ${productSimFile}`);
+        designFile = productSimPath;
+        localDesign = root(designFolder(productSimPath));
+        console.log(`[autogen] strategy 1 (product sim): ${productSimPath}`);
       }
     }
 
-    // Strategy 2: Fall back to generic sim file
+    // Strategy 2: Also try tee sim from sims/ folder before root fallback
+    if (!designFile) {
+      const teeSim = `sims/${designNumber}-tee-sim.png`;
+      const downloaded = await tryDownloadDesign(teeSim);
+      if (downloaded) {
+        designFile = teeSim;
+        localDesign = root(designFolder(teeSim));
+        console.log(`[autogen] strategy 2 (tee sim): ${teeSim}`);
+      }
+    }
+
+    // Strategy 3: Fall back to generic root sim file
     if (!designFile) {
       const genericFile = `${designNumber}.png`;
       const localGeneric = root(designFolder(genericFile));
